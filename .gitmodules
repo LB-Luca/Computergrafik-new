@@ -1,0 +1,6 @@
+[submodule "dependencies/tinyobjloader"]
+	path = dependencies/tinyobjloader
+	url = https://github.com/tinyobjloader/tinyobjloader
+[submodule "dependencies/vkal"]
+	path = dependencies/vkal
+	url = https://github.com/michaeleggers/vkal

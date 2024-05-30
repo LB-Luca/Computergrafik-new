@@ -1,0 +1,9 @@
+build
+cmakebuild
+bin
+.DS_Store
+debug
+release
+.vscode/**
+*/assimp/**
+

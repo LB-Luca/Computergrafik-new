@@ -1,0 +1,27 @@
+cmake_minimum_required(VERSION 3.23)
+project(Examples VERSION 1.0)
+
+option(ASSIMP_BUILD_ZLIB "Build the static library" ON)
+add_subdirectory(external/assimp)
+
+if (${WINDOWING} STREQUAL "VKAL_GLFW")
+    add_subdirectory(GLFW_HelloTriangle)
+    add_subdirectory(GLFW_Primitives)
+    add_subdirectory(GLFW_PrimitivesDynamic)
+    add_subdirectory(GLFW_TrueType)
+    add_subdirectory(GLFW_Texture)
+    add_subdirectory(GLFW_DynamicDescriptor)
+    add_subdirectory(GLFW_DynamicDescriptorTransformUniform)
+    add_subdirectory(GLFW_RenderToTexture)
+    add_subdirectory(GLFW_TextureDescriptorArray)
+    add_subdirectory(GLFW_MultipleTexturesNaive)
+    add_subdirectory(GLFW_ImGUI)
+    add_subdirectory(GLFW_Raytracing)
+elseif(${WINDOWING} STREQUAL "VKAL_SDL")
+    add_subdirectory(SDL_HelloTriangle)
+    add_subdirectory(SDL_Instancing)
+elseif(${WINDOWING} STREQUAL "VKAL_WIN32")
+    add_subdirectory(WIN32_Texture)
+endif()
+
+

@@ -1,0 +1,9 @@
+@echo off
+echo "Starting @EXECUTABLE@..."
+
+rem Change directory to the installation directory
+@REM cd "@INSTALL_DIR@"
+
+rem Execute the installed executable with command line parameters
+@EXECUTABLE@.exe @PARAMETERS@
+

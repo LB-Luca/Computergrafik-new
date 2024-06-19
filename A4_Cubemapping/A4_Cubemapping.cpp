@@ -698,16 +698,16 @@ int main(int argc, char** argv) {
 
 
 			/* Bind descriptor set for Skybox and draw models */
-			//vkal_bind_descriptor_set(image_id, &descriptor_set[0], pipeline_layout);
-			//vkCmdPushConstants(vkal_info->default_command_buffers[image_id], pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &skybox_model.model_matrix);
-			//vkal_draw(image_id, skybox_pipeline, skybox_model.offset, skybox_model.vertex_count);
+			vkal_bind_descriptor_set(image_id, &descriptor_set[0], pipeline_layout);
+			vkCmdPushConstants(vkal_info->default_command_buffers[image_id], pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &skybox_model.model_matrix);
+			vkal_draw(image_id, skybox_pipeline, skybox_model.offset, skybox_model.vertex_count);
 
 			/* Bind descriptor set for rest of the scene and draw models */
-			//vkal_bind_descriptor_set(image_id, &descriptor_set_scene[0], pipeline_layout);
-			//vkCmdPushConstants(vkal_info->default_command_buffers[image_id], pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &model.model_matrix);
-			//vkal_draw(image_id, model_pipeline, model.offset, model.vertex_count); 
-			//vkCmdPushConstants(vkal_info->default_command_buffers[image_id], pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &model_small.model_matrix);
-			//vkal_draw(image_id, model_pipeline, model_small.offset, model_small.vertex_count);
+			vkal_bind_descriptor_set(image_id, &descriptor_set_scene[0], pipeline_layout);
+			vkCmdPushConstants(vkal_info->default_command_buffers[image_id], pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &model.model_matrix);
+			vkal_draw(image_id, model_pipeline, model.offset, model.vertex_count); 
+			vkCmdPushConstants(vkal_info->default_command_buffers[image_id], pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &model_small.model_matrix);
+			vkal_draw(image_id, model_pipeline, model_small.offset, model_small.vertex_count);
 
 			/* Bind descriptor set for Cylinder and draw model */
 			vkal_bind_descriptor_set(image_id, &descriptor_set_cylinder[0], pipeline_layout);

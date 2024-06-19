@@ -16,6 +16,14 @@
 #include <vkal/vkal.h>
 
 #include <modelloader/Model.h>
+#include <imageloader/ImageLoader.h>
+
+#include <iostream>
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb/stb_image.h>
+
+#include <stdlib.h>
+#include <string.h>
 
 #define GL_PI 3.14159f
 
@@ -70,6 +78,8 @@ static bool phong;
 static Model g_model;
 static Model g_model_normals;
 static float angle_threshold = 45.0;
+std::vector<obj::Vertex> cyl_vertices;
+std::vector<int> cyl_indices;
 
 #define CAM_SPEED			0.01f
 #define CAM_SPEED_SLOW      (CAM_SPEED*0.1f)
@@ -209,7 +219,8 @@ GLFWwindow* init_window(int width, int height, char const * title) {
 }
 
 // Funktion zum berechnen des obj::Vetor normal aller Triangles
-void calculateAndStoreNormal(obj::Triangle* triangle) {
+void calculateAndStoreNormal(obj::Triangle* triangle)
+{
 	if (!triangle || !triangle->vertex[0] || !triangle->vertex[1] || !triangle->vertex[2]) {
 		return;
 	}
@@ -235,7 +246,8 @@ void calculateAndStoreNormal(obj::Triangle* triangle) {
 }
 
 //Funktion zur Berechnung des Winkels in Grad zwischen zwei glm::vec3 Vektoren
-float angleBetweenVectors(const glm::vec3& vec1, const glm::vec3& vec2) {
+float angleBetweenVectors(const glm::vec3& vec1, const glm::vec3& vec2)
+{
 	// Berechnung des Skalarprodukts
 	float dotProduct = glm::dot(vec1, vec2);
 
@@ -259,9 +271,61 @@ float angleBetweenVectors(const glm::vec3& vec1, const glm::vec3& vec2) {
 	return angleDegrees;
 }
 
-void setup_geometry()
+// TODO:
+void create_cylinder(float radius, float height, int segments)
 {
-	obj::Model model("../assets/obj/cylinder.obj");
+	// Create vertices for the top and bottom circles
+	for (int i = 0; i < segments; i=i+2) {
+		float theta = i * 2.0f * glm::pi<float>() / (segments/2);
+		float x = radius * cos(theta);
+		float z = radius * sin(theta);
+
+		// Top circle vertex
+		obj::Vertex top_vert;
+		top_vert.pos = obj::Vector3(x, height / 2, z);
+		top_vert.id = i;
+		cyl_vertices.push_back(top_vert);
+		// Bottom circle vertex
+		obj::Vertex bot_vert;
+		bot_vert.pos = obj::Vector3(x, -height / 2, z);
+		bot_vert.id = i+1;
+		cyl_vertices.push_back(bot_vert);
+	}
+
+	// Create the side faces ccw
+	// A---C
+	// | \ |
+	// B---D
+	for (int i = 0; i <= segments-2; i=i+2) {
+		int A = i;
+		int B = i + 1;
+		int C = i + 2;
+		int D = i + 3;
+
+		// last face, connected back to first
+		if (i == segments - 2) {
+			C = 0;
+			D = 1;
+		}
+		
+		cyl_indices.push_back(A); cyl_indices.push_back(B); cyl_indices.push_back(D);
+		cyl_indices.push_back(A); cyl_indices.push_back(D); cyl_indices.push_back(C);
+	}
+}
+
+
+void setup_geometry(Model& model)
+{
+	const int segments = 32; // muss gerade Zahl sein
+	float radius = 10;
+	float height = 30;
+	create_cylinder(radius, height, segments);
+	g_model.vertex_count = segments;
+	g_model.offset = vkal_vertex_buffer_add(&cyl_vertices, sizeof(Vertex), g_model.vertex_count);
+	g_model.index_count = cyl_indices.size();
+	g_model.index_buffer_offset = vkal_index_buffer_add(cyl_indices.data(), g_model.index_count);
+
+	/*
 	//obj::Model model("../assets/obj/bunny.obj");
 	g_model.vertices = (Vertex*)malloc(3 * model.GetTriangleCount() * sizeof(Vertex));
 	g_model_normals.vertices = (Vertex*)malloc(2 * 3 * model.GetTriangleCount() * sizeof(Vertex));
@@ -278,13 +342,14 @@ void setup_geometry()
 		glm::vec3 face_normal = glm::vec3(1);
 
 		for (int j = 0; j < 3; ++j) {
-			obj::Vertex* vertex = tri->vertex[j];
-			glm::vec3 vertex_pos = glm::vec3(vertex->pos.x, vertex->pos.y, vertex->pos.z);
+			Vertex vertex = tri.vertex[j];
+			glm::vec3 vertex_pos = glm::vec3(vertex.pos.x, vertex.pos.y, vertex.pos.z);
 			g_model.vertices[3 * i + j].pos = vertex_pos;
 
-			std::vector<obj::Triangle*> adj_tris;
+			std::vector<Tri> adj_tris;
 			// mit der Methode GetAdjacentTriangles erhält man alle Dreiecke, die einen gemeinsamen Vertex besitzen
-			model.GetAdjacentTriangles(adj_tris, vertex);
+			//model.GetAdjacentTriangles(adj_tris, vertex);
+			adj_tris = get_adjacent_triangles(&model, vertex);
 			std::vector<glm::vec3> normals;
 			normals.push_back(face_normal);
 
@@ -294,6 +359,7 @@ void setup_geometry()
 			g_model_normals.vertices[normal_index++].pos = vertex_pos;
 			g_model_normals.vertices[normal_index++].pos = vertex_pos + 0.5f * mean_normal;
 		}
+		
 	}
 
 	g_model.vertex_count = 3 * model.GetTriangleCount();
@@ -310,15 +376,24 @@ void setup_geometry()
 	g_model.material.ambient = glm::vec4(0.3, 0, 0.0, 1);
 	g_model.material.diffuse = glm::vec4(0.0, 1.0, 0.0, 1);
 	g_model.material.specular = glm::vec4(0.0f, 0.0f, 1.0f, 10.0f);
+	*/
 }
 
-void update_geometry()
+void update_geometry(Model& model)
 {
-	obj::Model model("../assets/obj/cylinder.obj");
-	//obj::Model model("../assets/obj/bunny.obj");
+
+	const int segments = 32; // muss gerade Zahl sein
+	float radius = 10;
+	float height = 30;
+	//create_cylinder(radius, height, segments);
+	// TODO:
+	//vertex_buffer_update
+	//index_buffer_update
+	
 	uint32_t normal_index = 0;
 	bool skip = false; // for skipping duplicate normal vectors
 
+	/*
 	// Initialize normals for Triangles
 	for (int i = 0; i < model.GetTriangleCount(); ++i) {
 		obj::Triangle* tri = model.GetTriangle(i);
@@ -378,6 +453,34 @@ void update_geometry()
 	}
 
 	g_model_normals.vertex_count = normal_index - 1;
+	*/
+}
+
+Image load_image(const char* file)
+{
+	Image image = {};
+
+	char exe_path[256];
+	get_exe_path(exe_path, 256 * sizeof(char));
+
+	std::string abs_path = concat_paths(get_assets_dir(), std::string(file));
+	abs_path = concat_paths(std::string(exe_path), abs_path);
+
+	int width, height, channels;
+	unsigned char* data = stbi_load(abs_path.c_str(), &width, &height, &channels, 4);
+	if (stbi_failure_reason() != NULL) {
+		printf("[STB-Image] %s\n", stbi_failure_reason());
+	}
+	image.width = uint32_t(width);
+	image.height = uint32_t(height);
+	image.channels = 4; // force this, even if less than 4. 
+
+	size_t imageSize = size_t(image.width * image.height * image.channels);
+	image.data = (unsigned char*)malloc(imageSize);
+	memcpy(image.data, data, imageSize);
+	stbi_image_free(data);
+
+	return image;
 }
 
 void update_modelMatrix(glm::mat4& mMatrix, float dt)
@@ -455,10 +558,10 @@ void update_camera_mouse_look(Camera& camera, float dt)
 }
 
 int main(int argc, char** argv) {
-	GLFWwindow* window = init_window(800, 600, "A3: Normalenvektoren");
+	GLFWwindow* window = init_window(800, 600, "A4: Normalenvektoren");
 
 	std::string assets_dir = "../../assets";
-	std::string shaders_dir = "../../A3_Normalenvektoren/shaders";
+	std::string shaders_dir = "../../A4_Normalenvektoren/shaders";
 	if (argc > 1) {
 		assets_dir = argv[1];
 	}
@@ -544,10 +647,17 @@ int main(int argc, char** argv) {
 			1,
 			VK_SHADER_STAGE_VERTEX_BIT,
 			0
+		},
+		{
+			4,
+			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			1,
+			VK_SHADER_STAGE_FRAGMENT_BIT,
+			0
 		}
 	};
 
-	VkDescriptorSetLayout descriptor_set_layout_1 = vkal_create_descriptor_set_layout(set_layout, 4);
+	VkDescriptorSetLayout descriptor_set_layout_1 = vkal_create_descriptor_set_layout(set_layout, 5);
 
 	VkDescriptorSetLayout layouts[] = {
 		descriptor_set_layout_1
@@ -637,12 +747,33 @@ int main(int argc, char** argv) {
 	vkal_update_uniform(&uniform_buffer_handle, &view_projection_data);
 	vkal_update_uniform(&uniform_buffer_handle2, &settings_data);
 
+	// TODO:
+	Image mantle_img = load_image("textures/brickwork-texture.jpg");
+	uint32_t mantle_img_size = mantle_img.height * mantle_img.width * 4;
+	unsigned char* mantle_data = (unsigned char*)malloc(mantle_img_size);
+	memcpy(mantle_data, mantle_img.data, mantle_img_size);
+
+	VkalTexture mantle_texture = vkal_create_texture(
+		4,
+		mantle_data,
+		mantle_img.width, mantle_img.height, mantle_img.channels,
+		0,
+		VK_IMAGE_VIEW_TYPE_2D,
+		VK_FORMAT_R8G8B8A8_UNORM,
+		0, 1,
+		0, 1,
+		VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+		VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+	vkal_update_descriptor_set_texture(descriptor_set_1[0], mantle_texture);
+
+
 	// Model and Projection Matrices
 	glm::mat4 model = glm::translate(glm::mat4(1), glm::vec3(0, 0, 0));
 	glm::mat4 projection = adjust_y_for_vulkan_ndc * glm::perspective(glm::radians(45.f), 1.f, 0.1f, 1000.0f);
 
-	// Build cone geometry
-	setup_geometry();
+	// Build cylinder geometry
+	Model cylinderModel;
+	setup_geometry(cylinderModel);
 
 	// Camera
 	Camera camera = Camera(glm::vec3(0, 0, 5));
@@ -685,7 +816,7 @@ int main(int argc, char** argv) {
 			ImGui::ColorEdit3("Material Diffuse", (float*)&g_model.material.diffuse);
 			ImGui::ColorEdit3("Material Specular", (float*)&g_model.material.specular);
 			ImGui::SliderFloat("Shininess", &g_model.material.specular.w, 1.0f, 128.0f);
-			ImGui::SliderFloat3("Light Position", (float*)&settings_data.light_pos[0], -1000.0, 1000.0);
+			ImGui::SliderFloat3("Light Position", (float*)&settings_data.light_pos[0], -100.0, 100.0);
 			ImGui::Checkbox("Phong", &phong);
 			ImGui::End();
 		}
@@ -709,12 +840,13 @@ int main(int argc, char** argv) {
 		}
 
 		// Angle Threshold has changed -> update vertex buffers of the models
+		/*
 		if (old_angle_threshold != angle_threshold) {
-			update_geometry();
+			update_geometry(cylinderModel);
 			vkal_vertex_buffer_update(g_model_normals.vertices, g_model_normals.vertex_count, sizeof(Vertex), g_model_normals.offset);
 			vkal_vertex_buffer_update(g_model.vertices, g_model.vertex_count, sizeof(Vertex), g_model.offset);
 			old_angle_threshold = angle_threshold;
-		}
+		}*/
 
 		view_projection_data.projection = adjust_y_for_vulkan_ndc * glm::perspective(glm::radians(45.f), float(width) / float(height), 0.1f, 1000.f);
 		view_projection_data.view = glm::lookAt(camera.m_Pos, camera.m_Center, camera.m_Up);

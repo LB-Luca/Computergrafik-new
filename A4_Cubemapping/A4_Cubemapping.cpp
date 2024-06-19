@@ -53,6 +53,9 @@ static uint32_t framebuffer_resized;
 static MouseState mouse_state;
 static GLFWwindow * window;
 
+std::vector<Vertex> cyl_vertices;
+std::vector<uint16_t> cyl_indices;
+
 #define CAM_SPEED			0.01f
 #define CAM_SPEED_SLOW      (CAM_SPEED*0.1f)
 #define MOUSE_SPEED			0.007f
@@ -222,6 +225,7 @@ Image load_image(const char* file)
 
 	return image;
 }
+
 static void update_camera(Camera& camera, float dt)
 {
 	float camera_dolly_speed = CAM_SPEED;
@@ -267,6 +271,56 @@ void update_camera_mouse_look(Camera& camera, float dt)
 		mouse_state.xpos_old = mouse_state.xpos;
 		mouse_state.ypos_old = mouse_state.ypos;
 	}
+}
+
+// TODO:
+Model create_cylinder(float radius, float height, int segments)
+{
+	Model cylinder;
+	cylinder.vertices = (Vertex*)malloc(segments * sizeof(Vertex));
+	// Create vertices for the top and bottom circles
+	for (int i = 0; i < segments; i = i + 2) {
+		float theta = i * 2.0f * glm::pi<float>() / (segments);
+		float x = radius * cos(theta);
+		float z = radius * sin(theta);
+
+		// Top circle vertex
+		Vertex top_vert;
+		top_vert.pos = glm::vec3(x, height / 2, z);
+		//top_vert.id = i;
+		cylinder.vertices[i].pos = top_vert.pos;
+		cylinder.vertices[i].color = glm::vec4(0.2f, 0.2f, 0.2f, 1.0f);
+		//cyl_vertices.push_back(top_vert);
+		
+		// Bottom circle vertex
+		Vertex bot_vert;
+		bot_vert.pos = glm::vec3(x, -height / 2, z);
+		//bot_vert.id = i + 1;
+		cylinder.vertices[i+1].pos = bot_vert.pos;
+		cylinder.vertices[i+1].color = glm::vec4(0.2f, 0.2f, 0.2f, 1.0f);
+		//cyl_vertices.push_back(bot_vert);
+	}
+
+	// Create the side faces ccw
+	// A---C
+	// | \ |
+	// B---D
+	for (int i = 0; i <= segments - 2; i = i + 2) {
+		int A = i;
+		int B = i + 1;
+		int C = i + 2;
+		int D = i + 3;
+
+		// last face, connected back to first
+		if (i == segments - 2) {
+			C = 0;
+			D = 1;
+		}
+		cyl_indices.push_back(A); cyl_indices.push_back(B); cyl_indices.push_back(D);
+		cyl_indices.push_back(A); cyl_indices.push_back(D); cyl_indices.push_back(C);
+		//cylinder.indices = cyl_indices;
+	}
+	return cylinder;
 }
 
 Model build_skybox_model()
@@ -411,6 +465,8 @@ int main(int argc, char** argv) {
 	vkal_allocate_descriptor_sets(vkal_info->default_descriptor_pool, descriptor_set_layouts, 1, &descriptor_set_scene);
 	VkDescriptorSet * descriptor_set = (VkDescriptorSet*)malloc(sizeof(VkDescriptorSet));
 	vkal_allocate_descriptor_sets(vkal_info->default_descriptor_pool, descriptor_set_layouts, 1, &descriptor_set);
+	VkDescriptorSet* descriptor_set_cylinder = (VkDescriptorSet*)malloc(sizeof(VkDescriptorSet));
+	vkal_allocate_descriptor_sets(vkal_info->default_descriptor_pool, descriptor_set_layouts, 1, &descriptor_set_cylinder);
 
 	/* Vertex Input Assembly */
 	VkVertexInputBindingDescription vertex_input_bindings[] =
@@ -431,7 +487,7 @@ int main(int argc, char** argv) {
 	// Model shader
 	uint8_t * vertex_byte_code = 0;
 	int vertex_code_size;
-	read_shader_file ("/scene_vert.spv", &vertex_byte_code, &vertex_code_size);
+	read_shader_file ("scene_vert.spv", &vertex_byte_code, &vertex_code_size);
 	uint8_t * fragment_byte_code = 0;
 	int fragment_code_size;
 	read_shader_file("scene_frag.spv", &fragment_byte_code, &fragment_code_size);
@@ -485,6 +541,9 @@ int main(int argc, char** argv) {
 	UniformBuffer skybox_ubo = vkal_create_uniform_buffer(sizeof(SkyboxUBO), 1, 0);
 	vkal_update_descriptor_set_uniform(descriptor_set[0], skybox_ubo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
+	UniformBuffer cylinder_ubo = vkal_create_uniform_buffer(sizeof(ModelUBO), 1, 0);
+	vkal_update_descriptor_set_uniform(descriptor_set_cylinder[0], cylinder_ubo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+
     // Camera init
 	Camera camera = Camera(glm::vec3(0, 0, 20));
 
@@ -493,11 +552,11 @@ int main(int argc, char** argv) {
 
 	// Cubemap Textures
 	Image cubemap_posx = load_image("textures/mountains_cubemap/posx.jpg");
-	Image cubemap_negx = load_image("/textures/mountains_cubemap/negx.jpg");
-	Image cubemap_posy = load_image("/textures/mountains_cubemap/posy.jpg");
-	Image cubemap_negy = load_image("/textures/mountains_cubemap/negy.jpg");
-	Image cubemap_posz = load_image("/textures/mountains_cubemap/posz.jpg");
-	Image cubemap_negz = load_image("/textures/mountains_cubemap/negz.jpg");
+	Image cubemap_negx = load_image("textures/mountains_cubemap/negx.jpg");
+	Image cubemap_posy = load_image("textures/mountains_cubemap/posy.jpg");
+	Image cubemap_negy = load_image("textures/mountains_cubemap/negy.jpg");
+	Image cubemap_posz = load_image("textures/mountains_cubemap/posz.jpg");
+	Image cubemap_negz = load_image("textures/mountains_cubemap/negz.jpg");
 	Image cubemap_array[] = {
 		cubemap_posx, cubemap_negx,
 		cubemap_posy, cubemap_negy,
@@ -510,7 +569,7 @@ int main(int argc, char** argv) {
 		memcpy(cubemap_ptr, cubemap_array[i].data, size_per_cubemap_image);
 		cubemap_ptr += size_per_cubemap_image;
 	}
-
+	/*
 	VkalTexture cubemap_texture = vkal_create_texture(
 		1,
 		cubemap_data,
@@ -524,6 +583,7 @@ int main(int argc, char** argv) {
 		VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT);
 	vkal_update_descriptor_set_texture(descriptor_set[0], cubemap_texture);
 	vkal_update_descriptor_set_texture(descriptor_set_scene[0], cubemap_texture);
+	*/
 
 	// Models
 	Model model = create_model_from_file("obj/sphere_mit.obj");
@@ -539,6 +599,32 @@ int main(int argc, char** argv) {
 	skybox_model.offset = vkal_vertex_buffer_add(skybox_model.vertices, sizeof(Vertex), skybox_model.vertex_count);
 	skybox_model.pos = glm::vec3(0, 0, 0);
 	skybox_model.model_matrix = glm::translate(glm::mat4(1.f), skybox_model.pos);
+
+	float cyl_radius = 10;
+	float cyl_height = 20;
+	int cyl_segments = 32;
+	Model cylinder_model = create_cylinder(cyl_radius, cyl_height, cyl_segments);
+	cylinder_model.vertex_count = cyl_segments;
+	cylinder_model.offset = vkal_vertex_buffer_add(cylinder_model.vertices, sizeof(Vertex), cylinder_model.vertex_count);
+	cylinder_model.pos = glm::vec3(0, 0, 0);
+	cylinder_model.index_count = cyl_indices.size();
+	cylinder_model.index_buffer_offset = vkal_index_buffer_add(cyl_indices.data(), cylinder_model.index_count);
+	cylinder_model.model_matrix = glm::mat4(1);
+
+	// Cylinder Texture
+	VkalTexture cylinder_texture = vkal_create_texture(
+		1,
+		cubemap_data,
+		cubemap_negx.width, cubemap_negx.height, cubemap_negx.channels,
+		0,
+		VK_IMAGE_VIEW_TYPE_2D,
+		VK_FORMAT_R8G8B8A8_UNORM,
+		0, 1,
+		0, 1,
+		VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+		VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+	vkal_update_descriptor_set_texture(descriptor_set[0], cylinder_texture);
+	vkal_update_descriptor_set_texture(descriptor_set_scene[0], cylinder_texture);
     
     //Timer Setup
 	double timer_frequency = glfwGetTimerFrequency();
@@ -612,16 +698,21 @@ int main(int argc, char** argv) {
 
 
 			/* Bind descriptor set for Skybox and draw models */
-			vkal_bind_descriptor_set(image_id, &descriptor_set[0], pipeline_layout);
-			vkCmdPushConstants(vkal_info->default_command_buffers[image_id], pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &skybox_model.model_matrix);
-			vkal_draw(image_id, skybox_pipeline, skybox_model.offset, skybox_model.vertex_count);
+			//vkal_bind_descriptor_set(image_id, &descriptor_set[0], pipeline_layout);
+			//vkCmdPushConstants(vkal_info->default_command_buffers[image_id], pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &skybox_model.model_matrix);
+			//vkal_draw(image_id, skybox_pipeline, skybox_model.offset, skybox_model.vertex_count);
 
 			/* Bind descriptor set for rest of the scene and draw models */
-			vkal_bind_descriptor_set(image_id, &descriptor_set_scene[0], pipeline_layout);
-			vkCmdPushConstants(vkal_info->default_command_buffers[image_id], pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &model.model_matrix);
-			vkal_draw(image_id, model_pipeline, model.offset, model.vertex_count); 
-			vkCmdPushConstants(vkal_info->default_command_buffers[image_id], pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &model_small.model_matrix);
-			vkal_draw(image_id, model_pipeline, model_small.offset, model_small.vertex_count);
+			//vkal_bind_descriptor_set(image_id, &descriptor_set_scene[0], pipeline_layout);
+			//vkCmdPushConstants(vkal_info->default_command_buffers[image_id], pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &model.model_matrix);
+			//vkal_draw(image_id, model_pipeline, model.offset, model.vertex_count); 
+			//vkCmdPushConstants(vkal_info->default_command_buffers[image_id], pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &model_small.model_matrix);
+			//vkal_draw(image_id, model_pipeline, model_small.offset, model_small.vertex_count);
+
+			/* Bind descriptor set for Cylinder and draw model */
+			vkal_bind_descriptor_set(image_id, &descriptor_set_cylinder[0], pipeline_layout);
+			vkCmdPushConstants(vkal_info->default_command_buffers[image_id], pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &cylinder_model.model_matrix);
+			vkal_draw_indexed(image_id, model_pipeline, cylinder_model.index_buffer_offset, cylinder_model.index_count, cylinder_model.offset, 1);
 
 			// Rendering ImGUI
 			ImGui::Render();

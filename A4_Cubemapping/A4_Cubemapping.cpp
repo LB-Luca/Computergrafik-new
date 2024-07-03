@@ -29,6 +29,9 @@ struct ModelUBO
 	glm::mat4 view;
 	glm::mat4 projection;
 	uint32_t texture_mapping_type; // 0 = object linear, 1 = eye linear, 2 = cubemap
+	glm::vec4 texture_mapping_params_s;
+	glm::vec4 texture_mapping_params_t;
+	glm::vec4 texture_mapping_params_r;
 };
 
 struct SkyboxUBO
@@ -273,7 +276,6 @@ void update_camera_mouse_look(Camera& camera, float dt)
 	}
 }
 
-// TODO:
 Model create_cylinder(float radius, float height, int segments)
 {
 	Model cylinder;
@@ -441,32 +443,37 @@ int main(int argc, char** argv) {
 			1, // number of resources with this layout binding
 			VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT,
 			0
-		},
+		}
+	};
+	VkDescriptorSetLayoutBinding set_layout_textures[] = {
 		{
-			1, // binding ID
+			0, // binding ID
 			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			1,
+			2,
 			VK_SHADER_STAGE_FRAGMENT_BIT,
 			0
 		}
 	};
     
 
-	VkDescriptorSetLayout descriptor_set_layout_global = vkal_create_descriptor_set_layout(set_layout_global, 2);
+	VkDescriptorSetLayout descriptor_set_layout_global = vkal_create_descriptor_set_layout(set_layout_global, 1);
+	VkDescriptorSetLayout descriptor_set_layout_textures = vkal_create_descriptor_set_layout(set_layout_textures, 1);
 	VkDescriptorSetLayout descriptor_set_layouts[] = {
-		descriptor_set_layout_global
-	}; // Order in this array matches the set number in shaders. We only have one set, in this example.
+		descriptor_set_layout_global,
+		descriptor_set_layout_textures
+	}; // Order in this array matches the set number in shaders.
 	uint32_t descriptor_set_layout_count = sizeof(descriptor_set_layouts) / sizeof(*descriptor_set_layouts);
     
 	// 3. Allocate Descriptor Set(s)
 	// allocate a descriptor set for each shader from a Descriptor Pool with the Layout defined by
 	// Descriptor Set Layout(s).
-	VkDescriptorSet * descriptor_set_scene = (VkDescriptorSet*)malloc(sizeof(VkDescriptorSet));
-	vkal_allocate_descriptor_sets(vkal_info->default_descriptor_pool, descriptor_set_layouts, 1, &descriptor_set_scene);
-	VkDescriptorSet * descriptor_set = (VkDescriptorSet*)malloc(sizeof(VkDescriptorSet));
-	vkal_allocate_descriptor_sets(vkal_info->default_descriptor_pool, descriptor_set_layouts, 1, &descriptor_set);
-	VkDescriptorSet* descriptor_set_cylinder = (VkDescriptorSet*)malloc(sizeof(VkDescriptorSet));
-	vkal_allocate_descriptor_sets(vkal_info->default_descriptor_pool, descriptor_set_layouts, 1, &descriptor_set_cylinder);
+	VkDescriptorSet * descriptor_set_model = (VkDescriptorSet*)malloc(sizeof(VkDescriptorSet));
+	VkDescriptorSet* descriptor_set_cube = (VkDescriptorSet*)malloc(sizeof(VkDescriptorSet));
+	VkDescriptorSet* descriptor_set_textures = (VkDescriptorSet*)malloc(sizeof(VkDescriptorSet));
+
+	vkal_allocate_descriptor_sets(vkal_info->default_descriptor_pool, descriptor_set_layouts, 1, &descriptor_set_model);
+	vkal_allocate_descriptor_sets(vkal_info->default_descriptor_pool, descriptor_set_layouts, 1, &descriptor_set_cube);
+	vkal_allocate_descriptor_sets(vkal_info->default_descriptor_pool, &descriptor_set_layouts[1], 1, &descriptor_set_textures);
 
 	/* Vertex Input Assembly */
 	VkVertexInputBindingDescription vertex_input_bindings[] =
@@ -520,7 +527,7 @@ int main(int argc, char** argv) {
         shader_setup, 
         VK_TRUE, VK_COMPARE_OP_LESS_OR_EQUAL, 
         VK_CULL_MODE_BACK_BIT, VK_POLYGON_MODE_FILL, 
-        VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_FRONT_FACE_COUNTER_CLOCKWISE,
+        VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_FRONT_FACE_CLOCKWISE,
 		vkal_info->render_pass, pipeline_layout);
 	
 	// Another pipeline for rendering the skybox
@@ -536,13 +543,10 @@ int main(int argc, char** argv) {
 	
 	// Uniform Buffers
 	UniformBuffer model_ubo  = vkal_create_uniform_buffer(sizeof(ModelUBO), 1, 0);
-	vkal_update_descriptor_set_uniform(descriptor_set_scene[0], model_ubo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	vkal_update_descriptor_set_uniform(descriptor_set_model[0], model_ubo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 	
 	UniformBuffer skybox_ubo = vkal_create_uniform_buffer(sizeof(SkyboxUBO), 1, 0);
-	vkal_update_descriptor_set_uniform(descriptor_set[0], skybox_ubo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-
-	UniformBuffer cylinder_ubo = vkal_create_uniform_buffer(sizeof(ModelUBO), 1, 0);
-	vkal_update_descriptor_set_uniform(descriptor_set_cylinder[0], cylinder_ubo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	vkal_update_descriptor_set_uniform(descriptor_set_cube[0], skybox_ubo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
     // Camera init
 	Camera camera = Camera(glm::vec3(0, 0, 20));
@@ -550,6 +554,7 @@ int main(int argc, char** argv) {
 	// Initial Projection Matrix 
 	glm::mat4 projection = adjust_y_for_vulkan_ndc * glm::perspective(glm::radians(45.f), 1.f, 0.1f, 1000.0f);
 
+	
 	// Cubemap Textures
 	Image cubemap_posx = load_image("textures/mountains_cubemap/posx.jpg");
 	Image cubemap_negx = load_image("textures/mountains_cubemap/negx.jpg");
@@ -569,7 +574,7 @@ int main(int argc, char** argv) {
 		memcpy(cubemap_ptr, cubemap_array[i].data, size_per_cubemap_image);
 		cubemap_ptr += size_per_cubemap_image;
 	}
-	/*
+	
 	VkalTexture cubemap_texture = vkal_create_texture(
 		1,
 		cubemap_data,
@@ -581,9 +586,33 @@ int main(int argc, char** argv) {
 		0, 6,
 		VK_FILTER_LINEAR, VK_FILTER_LINEAR,
 		VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT);
-	vkal_update_descriptor_set_texture(descriptor_set[0], cubemap_texture);
-	vkal_update_descriptor_set_texture(descriptor_set_scene[0], cubemap_texture);
-	*/
+	vkal_update_descriptor_set_texturearray(descriptor_set_cube[0], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, cubemap_texture);
+	//vkal_update_descriptor_set_texture(descriptor_set_model[0], cubemap_texture);
+	
+
+	
+	// Model Texture
+	Image model_image = load_image("textures/brickwork-texture.jpg");
+	uint32_t size_of_model_image = model_image.width * model_image.height * 4;
+	unsigned char* model_data = (unsigned char*)malloc(size_of_model_image);
+	unsigned char* model_ptr = model_data;
+	memcpy(model_ptr, model_image.data, size_of_model_image);
+
+	VkalTexture model_texture = vkal_create_texture(
+		2,
+		model_data,
+		model_image.width, model_image.height, 4,
+		0,	// TODO: Falsch oder?
+		VK_IMAGE_VIEW_TYPE_2D,
+		VK_FORMAT_R8G8B8A8_UNORM,
+		0, 1,
+		0, 1,
+		VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+		VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER);
+		//VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+	//vkal_update_descriptor_set_texture(descriptor_set_cube[0], model_texture);
+	vkal_update_descriptor_set_texturearray(descriptor_set_model[0], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, model_texture);
+	 
 
 	// Models
 	Model model = create_model_from_file("obj/sphere_mit.obj");
@@ -600,8 +629,8 @@ int main(int argc, char** argv) {
 	skybox_model.pos = glm::vec3(0, 0, 0);
 	skybox_model.model_matrix = glm::translate(glm::mat4(1.f), skybox_model.pos);
 
-	float cyl_radius = 10;
-	float cyl_height = 20;
+	float cyl_radius = 3;
+	float cyl_height = 8;
 	int cyl_segments = 32;
 	Model cylinder_model = create_cylinder(cyl_radius, cyl_height, cyl_segments);
 	cylinder_model.vertex_count = cyl_segments;
@@ -611,21 +640,7 @@ int main(int argc, char** argv) {
 	cylinder_model.index_buffer_offset = vkal_index_buffer_add(cyl_indices.data(), cylinder_model.index_count);
 	cylinder_model.model_matrix = glm::mat4(1);
 
-	// Cylinder Texture
-	VkalTexture cylinder_texture = vkal_create_texture(
-		1,
-		cubemap_data,
-		cubemap_negx.width, cubemap_negx.height, cubemap_negx.channels,
-		0,
-		VK_IMAGE_VIEW_TYPE_2D,
-		VK_FORMAT_R8G8B8A8_UNORM,
-		0, 1,
-		0, 1,
-		VK_FILTER_LINEAR, VK_FILTER_LINEAR,
-		VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT);
-	vkal_update_descriptor_set_texture(descriptor_set[0], cylinder_texture);
-	vkal_update_descriptor_set_texture(descriptor_set_scene[0], cylinder_texture);
-    
+
     //Timer Setup
 	double timer_frequency = glfwGetTimerFrequency();
 	double timestep = 1.f / timer_frequency; // step in second
@@ -635,6 +650,13 @@ int main(int argc, char** argv) {
 	int width = WINDOW_WIDTH;
 	int height = WINDOW_HEIGHT;
 	float foo = 1.0f;
+
+	// Texture Mapping
+	float texture_mapping_params[][4] = {
+		{1.0, 0.0, 0.0, 0.5},
+		{1.0, 0.0, 0.0, 0.5},
+		{0.0, 0.0, 0.0, 0.0}
+	};
 
 	// MAIN LOOP
 	while (!glfwWindowShouldClose(window)) {
@@ -673,6 +695,9 @@ int main(int argc, char** argv) {
 		
 		uniform_buffer.projection = adjust_y_for_vulkan_ndc * glm::perspective(glm::radians(45.f), float(width) / float(height), 0.1f, 1000.f);
 		uniform_buffer.view = glm::lookAt(camera.m_Pos, camera.m_Center, camera.m_Up);
+		//uniform_buffer.texture_mapping_params_s = glm::vec4(texture_mapping_params[0][0], texture_mapping_params[0][1], texture_mapping_params[0][2], texture_mapping_params[0][3]);
+		//uniform_buffer.texture_mapping_params_t = glm::vec4(texture_mapping_params[1][0], texture_mapping_params[1][1], texture_mapping_params[1][2], texture_mapping_params[1][3]);
+		//uniform_buffer.texture_mapping_params_r = glm::vec4(texture_mapping_params[2][0], texture_mapping_params[2][1], texture_mapping_params[2][2], texture_mapping_params[2][3]);
 		vkal_update_uniform(&model_ubo, &uniform_buffer);
         
 		uniform_buffer_skybox.projection = adjust_y_for_vulkan_ndc * glm::perspective(glm::radians(45.f), float(width) / float(height), 0.1f, 1000.f);
@@ -696,23 +721,23 @@ int main(int argc, char** argv) {
 			vkal_set_clear_color({ 0.6f, 0.6f, 0.6f, 1.0f });
 
 
-
 			/* Bind descriptor set for Skybox and draw models */
-			vkal_bind_descriptor_set(image_id, &descriptor_set[0], pipeline_layout);
-			vkCmdPushConstants(vkal_info->default_command_buffers[image_id], pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &skybox_model.model_matrix);
-			vkal_draw(image_id, skybox_pipeline, skybox_model.offset, skybox_model.vertex_count);
+			/*vkal_bind_descriptor_set(image_id, &descriptor_set_cube[0], pipeline_layout);
+			vkcmdpushconstants(vkal_info->default_command_buffers[image_id], pipeline_layout, vk_shader_stage_vertex_bit, 0, sizeof(glm::mat4), &skybox_model.model_matrix);
+			vkal_draw(image_id, skybox_pipeline, skybox_model.offset, skybox_model.vertex_count);*/
 
 			/* Bind descriptor set for rest of the scene and draw models */
-			vkal_bind_descriptor_set(image_id, &descriptor_set_scene[0], pipeline_layout);
-			vkCmdPushConstants(vkal_info->default_command_buffers[image_id], pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &model.model_matrix);
-			vkal_draw(image_id, model_pipeline, model.offset, model.vertex_count); 
-			vkCmdPushConstants(vkal_info->default_command_buffers[image_id], pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &model_small.model_matrix);
-			vkal_draw(image_id, model_pipeline, model_small.offset, model_small.vertex_count);
+			vkal_bind_descriptor_set(image_id, &descriptor_set_model[0], pipeline_layout);
+			//vkCmdPushConstants(vkal_info->default_command_buffers[image_id], pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &model.model_matrix);
+			//vkal_draw(image_id, model_pipeline, model.offset, model.vertex_count); 
+			//vkCmdPushConstants(vkal_info->default_command_buffers[image_id], pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &model_small.model_matrix);
+			//vkal_draw(image_id, model_pipeline, model_small.offset, model_small.vertex_count);
 
 			/* Bind descriptor set for Cylinder and draw model */
-			vkal_bind_descriptor_set(image_id, &descriptor_set_cylinder[0], pipeline_layout);
+			//vkal_bind_descriptor_set(image_id, &descriptor_set_textures[0], pipeline_layout);
 			vkCmdPushConstants(vkal_info->default_command_buffers[image_id], pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &cylinder_model.model_matrix);
 			vkal_draw_indexed(image_id, model_pipeline, cylinder_model.index_buffer_offset, cylinder_model.index_count, cylinder_model.offset, 1);
+
 
 			// Rendering ImGUI
 			ImGui::Render();
@@ -745,8 +770,8 @@ int main(int argc, char** argv) {
     
 	deinit_imgui(vkal_info);
 
-	free(descriptor_set);
-	free(descriptor_set_scene);
+	free(descriptor_set_cube);
+	free(descriptor_set_model);
 
 	vkal_cleanup();
 
